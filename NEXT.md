@@ -1,6 +1,10 @@
 # Next Steps
 
 ## SNMP Simulator Improvements
+- [ ] Switch to using `lextudio/snmpsim` from https://github.com/lextudio/snmpsim
+  - Current simulator may be outdated or incompatible
+  - `lextudio/snmpsim` is actively maintained and supports more features
+  - Provides better SNMPv2c support
 - [ ] Add more OIDs to provide a realistic network switch simulation
 - [ ] Configure to listen on port 11161 to avoid network port collisions
 - [ ] Ensure SNMPv2c is properly configured
