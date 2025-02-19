@@ -57,3 +57,13 @@ flowchart LR
 - [ ] Create integration tests for the full metrics collection flow
 - [ ] Add unit tests for URL construction and query parameters
 - [ ] Test error scenarios and recovery
+
+## Setup Tasks
+- [ ] Recreate `snmp_exporter/snmp.yml` using the generator:
+  ```bash
+  cd snmp_exporter
+  make generate
+  # Or download from:
+  # https://github.com/prometheus/snmp_exporter/blob/main/snmp.yml
+  ```
+  Note: This file is not tracked in git due to its size. Each developer should generate it locally.

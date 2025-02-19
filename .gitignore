@@ -51,9 +51,14 @@ vendor/
 # Air live reload
 tmp/
 
-# Local build artifacts
-.local/bin/
-.local/pkg/
+# Local build artifacts and dependencies
+.local/
+.venv/
+__pycache__/
+*.pyc
+
+# Large configuration files that should be generated
+snmp_exporter/snmp.yml
 
 # mise local configuration
 .mise.local.toml
