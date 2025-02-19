@@ -1,0 +1,186 @@
+[tools]
+go = "1.22.0"     # Latest stable Go release as of Feb 2025
+uv = "0.6.1"      # Latest stable uv release as of Feb 2025
+python = "3.13.2"  # Latest Python 3.13.x release as of Feb 2025
+
+[tasks]
+# Build tasks
+build = '''
+mkdir -p .local/bin
+GOBIN=$(pwd)/.local/bin \
+GOPATH=$(pwd)/.local \
+go mod tidy && \
+go build -buildvcs=false -o .local/bin/snmp-prometheus-getter ./cmd/snmp-prometheus-getter
+'''
+build-all = ["clean", "test", "build"]
+clean = "rm -f .local/bin/snmp-prometheus-getter"
+
+# Test tasks
+test = "go test -v ./..."
+test-coverage = "go test -v -coverprofile=coverage.out ./..."
+show-coverage = "go tool cover -html=coverage.out"
+
+# Development tasks
+lint = "golangci-lint run"
+security-check = "gosec ./..."
+verify = ["lint", "security-check", "test"]
+
+# Docker network management
+network-create = '''
+if ! docker network inspect elastic.hedgehog.internal >/dev/null 2>&1; then
+    docker network create --driver bridge elastic.hedgehog.internal
+fi
+'''
+network-remove = '''
+if docker network inspect elastic.hedgehog.internal >/dev/null 2>&1; then
+    docker network rm elastic.hedgehog.internal
+fi
+'''
+network-recreate = '''
+mise run network-remove
+mise run network-create
+'''
+
+# Development services
+services-start = '''
+mise run network-create && \
+docker compose up -d
+'''
+services-stop = "docker compose down"
+services-logs = "docker compose logs -f"
+services-status = "docker compose ps"
+
+# Elasticsearch specific tasks
+es-start = "docker compose up -d elasticsearch"
+es-stop = "docker compose stop elasticsearch"
+es-logs = "docker compose logs -f elasticsearch"
+es-clean = "docker compose down -v elasticsearch"  # Removes volumes too
+es-status = "curl -s http://localhost:9200/_cluster/health"
+
+# Test data generation
+generate-sine-data = "python scripts/generate_sine_data.py"
+
+# Superset specific tasks
+superset-build = "docker compose build superset"
+superset-rebuild = '''
+mise run superset-stop && \
+mise run superset-build && \
+mise run superset-start && \
+mise run superset-init
+'''
+superset-start = "docker compose up -d superset"
+superset-stop = "docker compose stop superset"
+superset-logs = "docker compose logs -f superset"
+superset-clean = "docker compose down -v superset"  # Removes volumes too
+superset-status = "curl -s http://localhost:8088/health"
+superset-init = "docker compose exec superset /app/init.sh"
+
+# SNMP Exporter specific tasks
+snmp-start = "docker compose up -d snmp_exporter"
+snmp-stop = "docker compose stop snmp_exporter"
+snmp-logs = "docker compose logs -f snmp_exporter"
+snmp-status = "curl -s http://localhost:9116/metrics"
+snmp-test = '''
+curl -s "http://localhost:9116/snmp?target=device1.hedgehog.internal&module=if_mib" | grep "^snmp_"
+'''
+
+# Superset user management
+superset-create-user = '''
+docker compose exec superset superset fab create-admin \
+    --username "${1:-hedgehog_admin}" \
+    --firstname "${2:-Hedgehog}" \
+    --lastname "${3:-Admin}" \
+    --email "${4:-hedgehog_admin@hedgehog.internal}" \
+    --password "${5:-hedgehog_admin_password}"
+'''
+
+superset-reset-password = '''
+docker compose exec superset superset fab reset-password \
+    --username "${1:-hedgehog_admin}" \
+    --password "${2:-hedgehog_admin_password}"
+'''
+
+# Elasticsearch configuration tasks
+es-create-index = '''
+curl -X PUT "http://localhost:9200/service_configuration" -H "Content-Type: application/json" -d @- << "EOF"
+{
+  "mappings": {
+    "properties": {
+      "id": { "type": "keyword" },
+      "name": { "type": "keyword" },
+      "description": { "type": "text" },
+      "snmp_settings": {
+        "properties": {
+          "host": { "type": "keyword" },
+          "port": { "type": "integer" },
+          "version": { "type": "keyword" },
+          "community": { "type": "keyword" },
+          "oids": {
+            "type": "nested",
+            "properties": {
+              "oid": { "type": "keyword" },
+              "name": { "type": "keyword" },
+              "description": { "type": "text" },
+              "type": { "type": "keyword" }
+            }
+          }
+        }
+      },
+      "prometheus_settings": {
+        "properties": {
+          "metric_prefix": { "type": "keyword" },
+          "labels": { "type": "object" }
+        }
+      },
+      "enabled": { "type": "boolean" },
+      "created_at": { "type": "date" },
+      "updated_at": { "type": "date" }
+    }
+  }
+}
+EOF
+'''
+
+es-upload-config = '''
+curl -X POST "http://localhost:9200/service_configuration/_doc" -H "Content-Type: application/json" -d @elasticsearch_device1_config.json
+'''
+
+es-list-configs = '''
+curl -s "http://localhost:9200/service_configuration/_search" -H "Content-Type: application/json" -d '{
+  "query": { "match_all": {} },
+  "_source": ["id", "name", "enabled"]
+}' | jq .
+'''
+
+es-get-config = '''
+curl -s "http://localhost:9200/service_configuration/_doc/$1" | jq .
+'''
+
+es-delete-config = '''
+curl -X DELETE "http://localhost:9200/service_configuration/_doc/$1"
+'''
+
+# Application specific tasks
+app-build = "docker compose build snmp_prometheus_getter"
+app-start = "docker compose up -d snmp_prometheus_getter"
+app-stop = "docker compose stop snmp_prometheus_getter"
+app-logs = "docker compose logs -f snmp_prometheus_getter"
+app-restart = '''
+mise run app-stop && \
+mise run app-start
+'''
+app-rebuild = '''
+mise run app-stop && \
+mise run app-build && \
+mise run app-start
+'''
+
+# Dependency management
+deps-tidy = "go mod tidy"
+deps-verify = "go mod verify"
+deps-update = "go get -u ./..."
+deps-download = "go mod download"
+deps-clean = "go clean -modcache"
+
+# Development setup
+setup = ["mise run deps-download", "mise run deps-tidy", "mise run deps-verify", "mise run build"]

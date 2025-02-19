@@ -1,0 +1,133 @@
+# version: '3.8'
+
+name: snmp-prometheus-getter
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.2
+    container_name: elasticsearch.hedgehog.internal
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      default:
+        aliases:
+          - elasticsearch.hedgehog.internal
+
+  # redis:
+  #   image: redis:7.2.4
+  #   container_name: redis.superset.hedgehog.internal
+  #   ports:
+  #     - "6379:6379"
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+  # superset:
+  #   build:
+  #     context: ./superset
+  #   image: hedgehog/superset:latest
+  #   container_name: superset.hedgehog.internal
+  #   depends_on:
+  #     - redis
+  #   ports:
+  #     - "8088:8088"
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+  snmp_exporter:
+    image: prom/snmp-exporter:v0.25.0
+    container_name: snmp.exporter.hedgehog.internal
+    ports:
+      - "9116:9116"
+    command:
+      - '--config.file=/etc/snmp_exporter/snmp.yml'
+    volumes:
+      - ./snmp.yml:/etc/snmp_exporter/snmp.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9116/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - snmp.exporter.hedgehog.internal
+
+  snmp_simulator:
+    image: tandrup/snmpsim
+    container_name: snmp.simulator.hedgehog.internal
+    ports:
+      - "161:161/udp"
+    volumes:
+      - ./snmp_data:/usr/local/snmpsim/data
+    networks:
+      default:
+        aliases:
+          - snmp.simulator.hedgehog.internal
+    restart: unless-stopped
+
+  snmp_prometheus_getter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: snmp.getter.hedgehog.internal
+    environment:
+      - ELASTICSEARCH_HOST=http://elasticsearch.hedgehog.internal:9200
+      - ELASTICSEARCH_PORT=9200
+      - SNMP_EXPORTER_URL=http://snmp.exporter.hedgehog.internal:9116
+      - SNMP_AGENT_HOST=snmp.simulator.hedgehog.internal
+      - SNMP_AGENT_PORT=161
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+    networks:
+      default:
+        aliases:
+          - snmp.getter.hedgehog.internal
+    depends_on:
+      - elasticsearch
+      - snmp_exporter
+      - snmp_simulator
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  setup_elasticsearch:
+    image: curlimages/curl:latest
+    volumes:
+      - ./scripts/setup_test_config.sh:/setup_test_config.sh:ro
+    entrypoint: ["/bin/sh", "/setup_test_config.sh"]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - setup.elasticsearch.hedgehog.internal
+
+volumes:
+  elasticsearch_data:
+
+networks:
+  default:
+    name: hedgehog.internal
+    external: true

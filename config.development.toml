@@ -1,0 +1,22 @@
+# Elasticsearch Configuration
+[config_elasticsearch]
+hosts = ["http://localhost:9200"]
+index = "service_configuration"
+certificate_hash = ""  # Not needed for local development
+
+[config_elasticsearch.auth]
+username = "hedgehog_config_reader"
+password = ""
+
+# Application Settings
+[app_settings]
+log_level = "debug"  # More verbose logging for development
+config_refresh_minutes = 5
+
+[app_settings.concurrency]
+max_concurrent_scrapers = 5
+max_concurrent_writers = 3
+
+[app_settings.retry]
+max_attempts = 3
+delay_seconds = 5

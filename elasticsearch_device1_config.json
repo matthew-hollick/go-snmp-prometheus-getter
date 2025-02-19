@@ -1,0 +1,31 @@
+{
+  "id": "switch01",
+  "name": "Switch 01",
+  "type": "network-device",
+  "enabled": true,
+  "snmp_settings": {
+    "host": "snmp.simulator.hedgehog.internal",
+    "port": 161,
+    "version": "2c",
+    "auth_name": "public_v2",
+    "timeout": "5s",
+    "retries": 3
+  },
+  "collector_settings": {
+    "hostname": "http://snmp.exporter.hedgehog.internal:9116",
+    "version": "1.0.0",
+    "modules": ["net-snmp"],
+    "collection_interval": "1m",
+    "metrics": {
+      "include": ["sysUpTime", "sysDescr", "ifInOctets", "ifOutOctets"],
+      "exclude": []
+    }
+  },
+  "tags": {
+    "environment": "development",
+    "location": "london",
+    "role": "network-switch"
+  },
+  "created_at": "2025-02-18T23:05:00Z",
+  "updated_at": "2025-02-18T23:05:00Z"
+}

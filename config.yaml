@@ -1,0 +1,18 @@
+config_elasticsearch:
+  hosts:
+    - https://elasticsearch.hedgehog.internal:9200
+  index: service_configuration
+  certificate_hash: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  auth:
+    username: hedgehog_config_reader
+    password: ""
+
+app_settings:
+  log_level: "info"
+  config_refresh_minutes: 5
+  concurrency:
+    max_concurrent_scrapers: 5
+    max_concurrent_writers: 3
+  retry:
+    max_attempts: 3
+    delay_seconds: 5

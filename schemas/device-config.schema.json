@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SNMP Device Configuration",
+  "description": "Configuration schema for SNMP device monitoring in the Hedgehog Analytics platform",
+  "type": "object",
+  "required": ["id", "name", "type", "enabled", "snmp_settings", "collector_settings", "tags"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the device configuration",
+      "pattern": "^[a-zA-Z0-9-_]+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable name for the device"
+    },
+    "type": {
+      "type": "string",
+      "description": "Type of device being monitored",
+      "enum": ["network-device"]
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether this device configuration is active",
+      "default": true
+    },
+    "snmp_settings": {
+      "type": "object",
+      "description": "SNMP protocol configuration for the device",
+      "required": ["host", "port", "version", "community", "timeout", "retries"],
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "Device hostname",
+          "pattern": "^[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*\\.hedgehog\\.internal$"
+        },
+        "port": {
+          "type": "integer",
+          "description": "SNMP port number",
+          "default": 161,
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "version": {
+          "type": "string",
+          "description": "SNMP protocol version",
+          "enum": ["1", "2c", "3"]
+        },
+        "community": {
+          "type": "string",
+          "description": "SNMP community string"
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Timeout duration for SNMP requests",
+          "pattern": "^[0-9]+(ms|s|m)$",
+          "default": "5s"
+        },
+        "retries": {
+          "type": "integer",
+          "description": "Number of retry attempts for failed requests",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 3
+        }
+      }
+    },
+    "collector_settings": {
+      "type": "object",
+      "description": "Settings for the SNMP metrics collector",
+      "required": ["hostname", "version", "modules", "collection_interval", "metrics"],
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "description": "Hostname of the collector instance",
+          "pattern": "^[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*\\.hedgehog\\.internal$"
+        },
+        "version": {
+          "type": "string",
+          "description": "Version of the collector software",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "modules": {
+          "type": "array",
+          "description": "List of SNMP modules to use for collection",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "collection_interval": {
+          "type": "string",
+          "description": "Interval between metric collections",
+          "pattern": "^[0-9]+(ms|s|m|h)$"
+        },
+        "metrics": {
+          "type": "object",
+          "description": "Metric collection configuration",
+          "required": ["include"],
+          "properties": {
+            "include": {
+              "type": "array",
+              "description": "List of metrics to collect",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "exclude": {
+              "type": "array",
+              "description": "List of metrics to exclude from collection",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true,
+              "default": []
+            }
+          }
+        }
+      }
+    },
+    "tags": {
+      "type": "object",
+      "description": "Metadata tags for the device",
+      "required": ["environment", "location", "role"],
+      "properties": {
+        "environment": {
+          "type": "string",
+          "description": "Deployment environment",
+          "enum": ["development", "staging", "production"]
+        },
+        "location": {
+          "type": "string",
+          "description": "Physical location of the device"
+        },
+        "role": {
+          "type": "string",
+          "description": "Primary role of the device",
+          "enum": ["network-switch", "router", "firewall", "server"]
+        }
+      },
+      "additionalProperties": {
+        "type": "string",
+        "description": "Additional custom tags"
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "description": "Timestamp when the configuration was created",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "description": "Timestamp when the configuration was last updated",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

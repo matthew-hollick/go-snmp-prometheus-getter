@@ -1,0 +1,29 @@
+# Bootstrap configuration for retrieving main configuration
+config_elasticsearch:
+  hosts:
+    - https://elasticsearch.hedgehog.internal:9200
+  index: service_configuration
+  # This is an example certificate hash - it should be replaced with the actual hash
+  certificate_hash: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  auth:
+    username: hedgehog_config_reader
+    # Password should be provided securely and not in this file
+    password: ""
+
+# Application settings
+app_settings:
+  # Log levels: debug, info, warn, error
+  log_level: "info"
+  
+  # Configuration refresh period in minutes
+  config_refresh_minutes: 5
+  
+  # Concurrency settings
+  concurrency:
+    max_concurrent_scrapers: 5
+    max_concurrent_writers: 3
+  
+  # Simple retry settings
+  retry:
+    max_attempts: 3
+    delay_seconds: 5
