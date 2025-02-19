@@ -1,15 +1,15 @@
-# Build Environment Setup
+# Setting Up Your Workspace
 
 This project uses [mise](https://mise.jdx.dev/) to manage tool versions and [uv](https://github.com/astral-sh/uv) for Python package management.
 
-## Setting Up Your Development Environment
+## Getting Started
 
-1. Install `mise` (if not already installed):
+1. Install `mise` (if you don't have it):
    ```bash
    curl https://mise.run | sh
    ```
 
-2. Clone the repository:
+2. Get the code:
    ```bash
    git clone <repository-url>
    cd go-snmp-prometheus-getter
@@ -20,54 +20,54 @@ This project uses [mise](https://mise.jdx.dev/) to manage tool versions and [uv]
    mise run setup
    ```
    This will:
-   - Download all Go dependencies
-   - Verify the dependency integrity
+   - Download all needed files
+   - Check file integrity
    - Build the project
 
-4. Start the development services:
+4. Start the services:
    ```bash
    mise run services-start
    ```
 
-## Common Development Tasks
+## Common Tasks
 
-### Dependency Management
-- `mise run deps-tidy` - Tidy up the module's dependencies
-- `mise run deps-verify` - Verify dependencies have not been modified
-- `mise run deps-update` - Update all dependencies to their latest versions
+### Managing Dependencies
+- `mise run deps-tidy` - Clean up the project's dependencies
+- `mise run deps-verify` - Check dependencies haven't changed
+- `mise run deps-update` - Get latest versions of dependencies
 - `mise run deps-download` - Download all dependencies
-- `mise run deps-clean` - Clean the module cache
+- `mise run deps-clean` - Remove old dependencies
 
 ### Building and Testing
 - `mise run build` - Build the project
 - `mise run test` - Run all tests
-- `mise run test-coverage` - Run tests with coverage
-- `mise run show-coverage` - Show coverage report in browser
+- `mise run test-coverage` - Run tests and check coverage
+- `mise run show-coverage` - Show coverage in your web browser
 
 ### Service Management
 - `mise run services-start` - Start all services
 - `mise run services-stop` - Stop all services
-- `mise run services-logs` - View service logs
-- `mise run services-status` - Check service status
+- `mise run services-logs` - View service information
+- `mise run services-status` - Check if services are running
 
 ## Development Tools
 
-### Go Tools
-- golangci-lint: Comprehensive Go linter
-- gosec: Security checker for Go code
+### Code Quality Tools
+- Go code checker: Looks for common mistakes
+- Security checker: Checks for security issues
 
-These are configured in the `.pre-commit-config.yaml` file and will run automatically on git commit.
+These run automatically when you save your work, as set up in `.pre-commit-config.yaml`.
 
-### Pre-commit Hooks
-The following checks run automatically before each commit:
-- Go formatting (gofmt)
-- Go linting (golangci-lint)
-- Security checks (gosec)
-- YAML formatting
-- Trailing whitespace removal
-- EOF newline fixes
+### Automatic Checks
+These checks run before saving your work:
+- Code formatting
+- Code quality checks
+- Security checks
+- File formatting
+- Whitespace cleanup
+- File ending fixes
 
-To run pre-commit checks manually:
+To run checks manually:
 ```bash
 uv run pre-commit run --all-files
 ```
@@ -79,11 +79,51 @@ To update tool versions:
 mise upgrade
 ```
 
-To update Python dependencies:
+To update Python packages:
 ```bash
 uv sync --upgrade
 ```
 
-To update pre-commit hooks:
+To update the automatic checks:
 ```bash
 uv run pre-commit autoupdate
+```
+
+## Solving Common Problems
+
+### Connection Issues
+
+1. Device Connection Problems
+   ```bash
+   # Check if test device is running
+   mise run device-status
+   
+   # Test connection
+   mise run device-test
+   ```
+
+2. Database Connection Problems
+   ```bash
+   # Check database status
+   mise run db-status
+   
+   # Test settings
+   mise run db-test-config
+   ```
+
+3. Build Problems
+   ```bash
+   # Clean old files
+   mise run clean
+   
+   # Start fresh
+   mise run rebuild
+   ```
+
+### Finding Problems
+
+- Service information: `mise run services-logs`
+- Extra device information: Set `DEVICE_DEBUG=1` before starting
+- Database information: Set `DB_DEBUG=1`
+
+For more help, see the guides in `docs/`.

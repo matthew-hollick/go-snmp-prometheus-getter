@@ -22,9 +22,8 @@ FROM alpine:latest
 
 WORKDIR /app
 
-# Copy the binary and configuration from the builder stage
+# Copy the binary from the builder stage
 COPY --from=0 /app/bin/snmp-prometheus-getter /app/bin/snmp-prometheus-getter
-COPY config.toml /app/config.toml
 
 # Create a non-root user
 RUN adduser -D -u 10001 hedgehog_app && \
@@ -34,4 +33,4 @@ RUN adduser -D -u 10001 hedgehog_app && \
 USER hedgehog_app
 
 # Run the application
-CMD ["/app/bin/snmp-prometheus-getter"]
+CMD ["/app/bin/snmp-prometheus-getter", "-config", "/app/config.toml"]

@@ -1,32 +1,33 @@
 package config
 
-// Logging levels
+// Logging levels.
 const (
-	LoggingLevelDebug = "debug"
-	LoggingLevelInfo  = "info"
-	LoggingLevelWarn  = "warn"
-	LoggingLevelError = "error"
+	LogLevelDebug = "debug"
+	LogLevelInfo  = "info"
+	LogLevelWarn  = "warn"
+	LogLevelError = "error"
 )
 
-// Default values for application settings
+// Default values for application settings.
 const (
-	DefaultConfigurationRefreshMinutes = 5
-	DefaultMaximumDataCollectors      = 5
-	DefaultMaximumDataWriters         = 3
-	DefaultMaximumRecoveryAttempts    = 3
-	DefaultRecoveryWaitSeconds        = 5
+	DefaultMaximumDataCollectors   = 5
+	DefaultMaximumDataWriters      = 3
+	DefaultMaximumRetryAttempts    = 3
+	DefaultRetryWaitSeconds        = 5
 )
 
-// Minimum values for configuration validation
+// Minimum values for configuration validation.
 const (
-	MinConfigRefreshMinutes    = 1
-	MinConcurrentOperations    = 1
-	MinRetryAttempts          = 1
-	MinRetryDelaySeconds      = 1
+	MinimumDataCollectors   = 1
+	MinimumDataWriters      = 1
+	MinimumRetryAttempts    = 1
+	MinimumRetryWaitSeconds = 1
 )
 
-// Maximum values for configuration validation
+// Maximum values for configuration validation.
 const (
-	MaxRetryDelaySeconds      = 300
-	MaxConcurrentOperations   = 100
+	MaximumDataCollectors   = 100
+	MaximumDataWriters      = 50
+	MaximumRetryAttempts    = 10
+	MaximumRetryWaitSeconds = 60
 )

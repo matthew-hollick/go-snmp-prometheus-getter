@@ -1,3 +1,4 @@
+// Package collector provides functionality for collecting SNMP metrics.
 package collector
 
 import (
@@ -7,120 +8,96 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sixworks/go-snmp-prometheus-getter/internal/elasticsearch"
-	"github.com/sixworks/go-snmp-prometheus-getter/internal/exporter"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/elasticsearch"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/exporter"
 )
 
-// Collector manages the collection of SNMP metrics
+// Collector manages the collection of SNMP metrics.
 type Collector struct {
 	exporterClient *exporter.Client
-	logger        *slog.Logger
-	rateLimiter   *time.Ticker
-	workerPool    chan struct{}
-	wg            sync.WaitGroup
+	logger         *slog.Logger
+	rateLimiter    *time.Ticker
+	workerPool     chan struct{}
+	wg             sync.WaitGroup
 }
 
-// Config represents the collector configuration
+// Config represents the collector configuration.
 type Config struct {
 	MaxConcurrentScrapers int
 	ScrapeIntervalSeconds int
 }
 
-// New creates a new collector
+// New creates a new collector.
 func New(exporterClient *exporter.Client, cfg Config, logger *slog.Logger) *Collector {
 	return &Collector{
 		exporterClient: exporterClient,
-		logger:        logger,
-		rateLimiter:   time.NewTicker(time.Duration(cfg.ScrapeIntervalSeconds) * time.Second),
-		workerPool:    make(chan struct{}, cfg.MaxConcurrentScrapers),
+		logger:         logger,
+		rateLimiter:    time.NewTicker(time.Duration(cfg.ScrapeIntervalSeconds) * time.Second),
+		workerPool:     make(chan struct{}, cfg.MaxConcurrentScrapers),
 	}
 }
 
-// CollectMetrics collects metrics for a given configuration
+// CollectMetrics collects metrics for a given configuration.
 func (c *Collector) CollectMetrics(ctx context.Context, cfg elasticsearch.Config) error {
-	// Wait for rate limiter
+	// Wait for rate limiter.
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-c.rateLimiter.C:
 	}
 
-	// Acquire worker from pool
+	// Acquire worker from pool.
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case c.workerPool <- struct{}{}:
 	}
-	defer func() { <-c.workerPool }()
 
-	// Prepare query parameters
+	// Ensure worker is released when done.
+	defer func() {
+		<-c.workerPool
+	}()
+
+	// Prepare query parameters.
 	params := exporter.QueryParams{
-		Target:    cfg.SNMPSettings.Host,
-		Port:      cfg.SNMPSettings.Port,
-		Module:    []string{}, // TODO: Determine modules based on OIDs
-		Auth:      cfg.SNMPSettings.Community,
+		Target:  cfg.SNMPSettings.Host,
+		Port:    cfg.SNMPSettings.Port,
+		Module:  []string{}, // TODO: Determine modules based on OIDs.
+		Auth:    cfg.SNMPSettings.Community,
+		Version: cfg.SNMPSettings.Version,
+		Timeout: cfg.SNMPSettings.Timeout,
+		Retries: cfg.SNMPSettings.Retries,
 	}
 
-	// Log collection attempt
-	c.logger.Debug("Collecting metrics",
-		"target", params.Target,
-		"port", params.Port,
-		"auth", params.Auth)
-
-	// Collect metrics with retries
-	var lastErr error
-	for attempt := 1; attempt <= 3; attempt++ {
-		metrics, err := c.exporterClient.GetMetrics(ctx, params)
-		if err == nil {
-			if err := c.validateResponse(metrics); err != nil {
-				lastErr = fmt.Errorf("invalid response: %w", err)
-				continue
-			}
-
-			// Log collected metrics in debug mode
-			c.logger.Debug("Collected metrics",
-				"target", params.Target,
-				"metrics", string(metrics),
-				"config_id", cfg.ID)
-
-			return nil
-		}
-		lastErr = err
-		
-		c.logger.Debug("Collection attempt failed",
-			"target", params.Target,
-			"attempt", attempt,
-			"error", err)
-
-		// Check if we should retry
-		if attempt < 3 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(time.Duration(attempt) * time.Second):
-				continue
-			}
-		}
+	// Query the exporter.
+	metrics, err := c.exporterClient.GetMetrics(ctx, &params)
+	if err != nil {
+		return fmt.Errorf("failed to query exporter: %w", err)
 	}
 
-	return fmt.Errorf("failed after 3 attempts: %w", lastErr)
+	// Validate response.
+	if err := c.validateResponse(metrics); err != nil {
+		return fmt.Errorf("invalid response from exporter: %w", err)
+	}
+
+	return nil
 }
 
-// validateResponse checks if the response contains valid metrics
+// validateResponse checks if the response contains valid metrics.
 func (c *Collector) validateResponse(metrics []byte) error {
 	if len(metrics) == 0 {
 		return fmt.Errorf("empty response")
 	}
 
 	// TODO: Add more validation:
-	// 1. Check if response is valid Prometheus format
-	// 2. Verify expected metrics are present
-	// 3. Check value ranges if specified in configuration
+	// 1. Check if response is valid Prometheus format.
+	// 2. Verify expected metrics are present.
+	// 3. Check value ranges if specified in configuration.
 
 	return nil
 }
 
-// Start begins collecting metrics for all configurations
+// Start begins collecting metrics for all configurations.
 func (c *Collector) Start(ctx context.Context, configs []elasticsearch.Config) error {
 	for _, cfg := range configs {
 		if !cfg.Enabled {
@@ -128,6 +105,7 @@ func (c *Collector) Start(ctx context.Context, configs []elasticsearch.Config) e
 		}
 
 		c.wg.Add(1)
+
 		go func(cfg elasticsearch.Config) {
 			defer c.wg.Done()
 
@@ -153,7 +131,7 @@ func (c *Collector) Start(ctx context.Context, configs []elasticsearch.Config) e
 	return nil
 }
 
-// Stop gracefully stops the collector
+// Stop gracefully stops the collector.
 func (c *Collector) Stop() {
 	c.rateLimiter.Stop()
 	c.wg.Wait()

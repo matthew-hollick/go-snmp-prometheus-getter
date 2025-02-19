@@ -21,41 +21,31 @@
 - [ ] Improve error handling for SNMP exporter responses
 - [ ] Add retry logic with exponential backoff
 
+## Code Quality Improvements
+- [ ] Fix type mismatches in collector package:
+  - Update `SNMPSettings` struct to include missing fields
+  - Fix test cases to use correct types
+- [ ] Address configuration issues:
+  - Fix undefined fields in `BootstrapConfiguration`
+  - Update test cases to match new structure
+- [ ] Fix Elasticsearch client issues:
+  - Correct client initialization in tests
+  - Update struct field usage
+- [ ] Address security concerns:
+  - Set appropriate TLS MinVersion in `service.go`
+  - Fix memory aliasing in service package
+- [ ] Fix style issues:
+  - Apply `gofmt -s` to `service.go`
+  - Fix whitespace and cuddling issues:
+    - Correct assignment grouping in `exporter/client.go`
+    - Fix switch statement placement in `schema/transformer.go`
+    - Update return statement placement in multiple files
+    - Correct goroutine launches in `service.go`
+
 ## Documentation
-### Sequence Diagram
-```mermaid
-sequenceDiagram
-    participant ES as Elasticsearch<br/>(TCP/9200)
-    participant Getter as SNMP Getter
-    participant Exporter as SNMP Exporter<br/>(TCP/9116)
-    participant Simulator as SNMP Simulator<br/>(UDP/11161)
-
-    Note over Getter: Bootstrap Phase
-    Getter->>ES: HTTP GET /service_configuration/_search
-    ES-->>Getter: Return device configurations (JSON)
-    
-    Note over Getter: Collection Phase
-    loop Every collection interval
-        Getter->>Exporter: HTTP GET /snmp?target=simulator&module=net-snmp
-        Exporter->>Simulator: SNMP v2c GET/WALK (UDP/11161)
-        Simulator-->>Exporter: SNMP v2c Response
-        Exporter-->>Getter: HTTP 200 (Prometheus format)
-        Getter->>ES: HTTP POST /metrics/_doc (JSON)
-    end
-```
-
-### Component Flowchart
-```mermaid
-flowchart LR
-    ES[(Elasticsearch)]
-    Getter[SNMP Getter]
-    Exporter[SNMP Exporter]
-    Simulator[SNMP Simulator]
-
-    ES <--> |Device configs\nMetrics storage| Getter
-    Getter --> |HTTP metrics query| Exporter
-    Exporter --> |SNMP v2c\nport 11161| Simulator
-```
+- [ ] Review and validate architecture diagrams in `ARCHITECTURE.md`
+- [ ] Add implementation notes for each component
+- [ ] Create troubleshooting guide
 
 ## Testing
 - [ ] Create integration tests for the full metrics collection flow

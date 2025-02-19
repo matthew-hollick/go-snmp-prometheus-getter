@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
@@ -26,34 +25,34 @@ type ESWriter struct {
 }
 
 // NewWriter creates a new Elasticsearch writer
-func NewWriter(cfg WriterConfig) (*ESWriter, error) {
-	if err := validateConfig(cfg); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+func NewWriter(esclient *elasticsearch.Client, cfg WriterConfig) (*ESWriter, error) {
+	if err := validateConfig(&cfg); err != nil {
+		return nil, fmt.Errorf("validating configuration: %w", err)
 	}
 
-	esCfg := elasticsearch.Config{
-		Addresses: cfg.Addresses,
-		Username:  cfg.Username,
-		Password:  cfg.Password,
-	}
-
-	client, err := elasticsearch.NewClient(esCfg)
+	info, err := esclient.Info()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create elasticsearch client: %w", err)
+		return nil, fmt.Errorf("getting cluster info: %w", err)
+	}
+	defer info.Body.Close()
+
+	var clusterInfo struct {
+		Version struct {
+			Number string `json:"number"`
+		} `json:"version"`
 	}
 
-	// Verify connection and certificate if hash provided
-	if err := verifyConnection(client, cfg.CertificateHash); err != nil {
-		return nil, fmt.Errorf("failed to verify elasticsearch connection: %w", err)
+	if err := json.NewDecoder(info.Body).Decode(&clusterInfo); err != nil {
+		return nil, fmt.Errorf("decoding cluster info: %w", err)
 	}
 
-	bi, err := createBulkIndexer(client, cfg)
+	bi, err := createBulkIndexer(esclient, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bulk indexer: %w", err)
 	}
 
 	return &ESWriter{
-		client:        client,
+		client:        esclient,
 		bulkIndexer:   bi,
 		config:        cfg,
 		indexPrefix:   cfg.IndexPrefix,
@@ -61,35 +60,21 @@ func NewWriter(cfg WriterConfig) (*ESWriter, error) {
 	}, nil
 }
 
-func validateConfig(cfg WriterConfig) error {
-	if len(cfg.Addresses) == 0 {
-		return &ValidationError{Field: "addresses", Message: "at least one address is required"}
+func validateConfig(cfg *WriterConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("configuration is nil")
 	}
+
 	if cfg.IndexPrefix == "" {
-		return &ValidationError{Field: "index_prefix", Message: "index prefix is required"}
+		return fmt.Errorf("index prefix is required")
 	}
+
 	if cfg.BatchSize <= 0 {
-		return &ValidationError{Field: "batch_size", Message: "batch size must be positive"}
+		return fmt.Errorf("batch size must be positive")
 	}
+
 	if cfg.FlushInterval <= 0 {
-		return &ValidationError{Field: "flush_interval", Message: "flush interval must be positive"}
-	}
-	return nil
-}
-
-func verifyConnection(client *elasticsearch.Client, certHash string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	info, err := client.Info(client.Info.WithContext(ctx))
-	if err != nil {
-		return fmt.Errorf("failed to get cluster info: %w", err)
-	}
-	defer info.Body.Close()
-
-	if certHash != "" {
-		// TODO: Implement certificate hash verification
-		// This would involve getting the server's certificate and comparing its hash
+		return fmt.Errorf("flush interval must be positive")
 	}
 
 	return nil
@@ -102,7 +87,6 @@ func createBulkIndexer(client *elasticsearch.Client, cfg WriterConfig) (esutil.B
 		FlushBytes:    5e6,
 		FlushInterval: cfg.FlushInterval,
 		OnError: func(ctx context.Context, err error) {
-			// TODO: Add proper error handling and logging
 			fmt.Printf("bulk indexer error: %v\n", err)
 		},
 	})
@@ -135,21 +119,17 @@ func (w *ESWriter) WriteOne(ctx context.Context, doc MetricDocument) error {
 	}
 	w.mu.RUnlock()
 
-	// Validate document
 	if err := validateDocument(doc); err != nil {
 		return fmt.Errorf("document validation failed: %w", err)
 	}
 
-	// Create index name with date suffix
 	indexName := fmt.Sprintf("%s-%s", w.indexPrefix, doc.Timestamp.Format("2006.01.02"))
 
-	// Convert document to JSON bytes
 	docJSON, err := json.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal document: %w", err)
 	}
 
-	// Add document to bulk indexer
 	err = w.bulkIndexer.Add(ctx, esutil.BulkIndexerItem{
 		Action:     "index",
 		Index:      indexName,
@@ -166,19 +146,18 @@ func (w *ESWriter) WriteOne(ctx context.Context, doc MetricDocument) error {
 
 func validateDocument(doc MetricDocument) error {
 	if doc.Timestamp.IsZero() {
-		return &ValidationError{Field: "timestamp", Message: "timestamp is required"}
+		return fmt.Errorf("timestamp is required")
 	}
 	if doc.DeviceID == "" {
-		return &ValidationError{Field: "device_id", Message: "device ID is required"}
+		return fmt.Errorf("device ID is required")
 	}
 	if doc.MetricName == "" {
-		return &ValidationError{Field: "metric_name", Message: "metric name is required"}
+		return fmt.Errorf("metric name is required")
 	}
 	return nil
 }
 
 func generateDocumentID(doc MetricDocument) string {
-	// Create a unique ID based on device ID, metric name, and timestamp
 	idStr := fmt.Sprintf("%s-%s-%d", doc.DeviceID, doc.MetricName, doc.Timestamp.UnixNano())
 	hash := sha256.Sum256([]byte(idStr))
 	return hex.EncodeToString(hash[:])

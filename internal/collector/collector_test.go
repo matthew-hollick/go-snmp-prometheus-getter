@@ -4,30 +4,28 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/sixworks/go-snmp-prometheus-getter/internal/elasticsearch"
-	"github.com/sixworks/go-snmp-prometheus-getter/internal/exporter"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/elasticsearch"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/exporter"
 )
 
 func TestCollector_CollectMetrics(t *testing.T) {
-	// Create test configuration
+	// Create test configuration.
 	cfg := elasticsearch.Config{
-		ID:      "test1",
+		ID:      "test_device",
 		Enabled: true,
-		SNMPSettings: struct {
-			Host              string
-			Port              int
-			Version           string
-			Community         string
-			PollIntervalSeconds int
-		}{
-			Host:              "localhost",
-			Port:              161,
-			Version:           "2c",
-			Community:         "public",
+		SNMPSettings: elasticsearch.SNMPSettings{
+			Host:                "test.hedgehog.internal",
+			Port:                161,
+			Version:             "2c",
+			Community:           "public",
 			PollIntervalSeconds: 60,
+			AuthName:            "test_auth",
+			Timeout:             "5s",
+			Retries:             3,
 		},
 	}
 
@@ -41,10 +39,11 @@ func TestCollector_CollectMetrics(t *testing.T) {
 	}
 
 	// Create collector
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	collector := New(exporterClient, Config{
-		MaxConcurrentScrapers: 2,
+		MaxConcurrentScrapers: 1,
 		ScrapeIntervalSeconds: 1,
-	}, slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	}, logger)
 
 	// Test collecting metrics
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -52,28 +51,24 @@ func TestCollector_CollectMetrics(t *testing.T) {
 
 	err = collector.CollectMetrics(ctx, cfg)
 	if err != nil {
-		// We expect an error in the test environment since there's no real SNMP exporter
-		t.Logf("Expected error collecting metrics: %v", err)
+		t.Errorf("CollectMetrics() error = %v", err)
 	}
 }
 
 func TestCollector_RateLimiting(t *testing.T) {
 	// Create test configuration
 	cfg := elasticsearch.Config{
-		ID:      "test1",
+		ID:      "test_device",
 		Enabled: true,
-		SNMPSettings: struct {
-			Host              string
-			Port              int
-			Version           string
-			Community         string
-			PollIntervalSeconds int
-		}{
-			Host:              "localhost",
-			Port:              161,
-			Version:           "2c",
-			Community:         "public",
+		SNMPSettings: elasticsearch.SNMPSettings{
+			Host:                "test.hedgehog.internal",
+			Port:                161,
+			Version:             "2c",
+			Community:           "public",
 			PollIntervalSeconds: 60,
+			AuthName:            "test_auth",
+			Timeout:             "5s",
+			Retries:             3,
 		},
 	}
 
@@ -87,87 +82,86 @@ func TestCollector_RateLimiting(t *testing.T) {
 	}
 
 	// Create collector with 1 second rate limit
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	collector := New(exporterClient, Config{
 		MaxConcurrentScrapers: 1,
 		ScrapeIntervalSeconds: 1,
-	}, slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	}, logger)
 
 	// Test that we can't exceed rate limit
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	start := time.Now()
-	
+
 	// Try to collect twice
-	_ = collector.CollectMetrics(ctx, cfg)
-	_ = collector.CollectMetrics(ctx, cfg)
-	
-	duration := time.Since(start)
+	err = collector.CollectMetrics(ctx, cfg)
+	if err != nil {
+		t.Errorf("CollectMetrics() error = %v", err)
+	}
+
+	err = collector.CollectMetrics(ctx, cfg)
+	if err != nil {
+		t.Errorf("CollectMetrics() error = %v", err)
+	}
+
+	elapsed := time.Since(start)
 
 	// Should take at least 1 second due to rate limiting
-	if duration < time.Second {
-		t.Errorf("Rate limiting not working, took %v, expected at least 1s", duration)
+	if elapsed < time.Second {
+		t.Errorf("Rate limiting not working, elapsed time = %v", elapsed)
 	}
 }
 
 func TestCollector_ConcurrencyLimit(t *testing.T) {
 	// Create test configuration
 	cfg := elasticsearch.Config{
-		ID:      "test1",
+		ID:      "test_device",
 		Enabled: true,
-		SNMPSettings: struct {
-			Host              string
-			Port              int
-			Version           string
-			Community         string
-			PollIntervalSeconds int
-		}{
-			Host:              "localhost",
-			Port:              161,
-			Version:           "2c",
-			Community:         "public",
+		SNMPSettings: elasticsearch.SNMPSettings{
+			Host:                "test.hedgehog.internal",
+			Port:                161,
+			Version:             "2c",
+			Community:           "public",
 			PollIntervalSeconds: 60,
+			AuthName:            "test_auth",
+			Timeout:             "5s",
+			Retries:             3,
 		},
 	}
 
-	// Create test exporter client
-	exporterClient, err := exporter.NewClient(exporter.Config{
-		BaseURL: "http://localhost:9116",
-		Timeout: 5 * time.Second,
-	})
-	if err != nil {
-		t.Fatalf("Failed to create exporter client: %v", err)
+	// Create test collector with concurrency limit of 2
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	exporterClient := &exporter.Client{}
+	collector := New(exporterClient, Config{
+		MaxConcurrentScrapers: 2,
+		ScrapeIntervalSeconds: 0,
+	}, logger)
+
+	// Test concurrent collections
+	ctx := context.Background()
+	start := time.Now()
+
+	var wg sync.WaitGroup
+
+	// Start 3 concurrent collections
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		
+		go func() {
+			defer wg.Done()
+			
+			err := collector.CollectMetrics(ctx, cfg)
+			if err != nil {
+				t.Errorf("CollectMetrics() error = %v", err)
+			}
+		}()
 	}
 
-	// Create collector with concurrency limit of 1
-	collector := New(exporterClient, Config{
-		MaxConcurrentScrapers: 1,
-		ScrapeIntervalSeconds: 0, // No rate limiting for this test
-	}, slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	wg.Wait()
 
-	// Start multiple collections in parallel
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		var wg sync.WaitGroup
-		for i := 0; i < 3; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				_ = collector.CollectMetrics(ctx, cfg)
-			}()
-		}
-		wg.Wait()
-	}()
-
-	// Check that all collections complete within timeout
-	select {
-	case <-ctx.Done():
-		t.Error("Test timed out, concurrency limit may be blocking too much")
-	case <-done:
-		// Test passed
+	elapsed := time.Since(start)
+	if elapsed < time.Second {
+		t.Errorf("Concurrency limiting not working, elapsed time = %v", elapsed)
 	}
 }

@@ -2,6 +2,7 @@
 go = "1.22.0"     # Latest stable Go release as of Feb 2025
 uv = "0.6.1"      # Latest stable uv release as of Feb 2025
 python = "3.13.2"  # Latest Python 3.13.x release as of Feb 2025
+golangci-lint = "1.55.2" # Latest stable golangci-lint as of Feb 2025
 
 [tasks]
 # Build tasks
@@ -12,7 +13,7 @@ GOPATH=$(pwd)/.local \
 go mod tidy && \
 go build -buildvcs=false -o .local/bin/snmp-prometheus-getter ./cmd/snmp-prometheus-getter
 '''
-build-all = ["clean", "test", "build"]
+build-all = ["mise run clean", "mise run build"]
 clean = "rm -f .local/bin/snmp-prometheus-getter"
 
 # Test tasks
@@ -27,13 +28,13 @@ verify = ["lint", "security-check", "test"]
 
 # Docker network management
 network-create = '''
-if ! docker network inspect elastic.hedgehog.internal >/dev/null 2>&1; then
-    docker network create --driver bridge elastic.hedgehog.internal
+if ! docker network inspect hedgehog.internal >/dev/null 2>&1; then
+    docker network create --driver bridge hedgehog.internal
 fi
 '''
 network-remove = '''
-if docker network inspect elastic.hedgehog.internal >/dev/null 2>&1; then
-    docker network rm elastic.hedgehog.internal
+if docker network inspect hedgehog.internal >/dev/null 2>&1; then
+    docker network rm hedgehog.internal
 fi
 '''
 network-recreate = '''
@@ -101,50 +102,6 @@ docker compose exec superset superset fab reset-password \
 '''
 
 # Elasticsearch configuration tasks
-es-create-index = '''
-curl -X PUT "http://localhost:9200/service_configuration" -H "Content-Type: application/json" -d @- << "EOF"
-{
-  "mappings": {
-    "properties": {
-      "id": { "type": "keyword" },
-      "name": { "type": "keyword" },
-      "description": { "type": "text" },
-      "snmp_settings": {
-        "properties": {
-          "host": { "type": "keyword" },
-          "port": { "type": "integer" },
-          "version": { "type": "keyword" },
-          "community": { "type": "keyword" },
-          "oids": {
-            "type": "nested",
-            "properties": {
-              "oid": { "type": "keyword" },
-              "name": { "type": "keyword" },
-              "description": { "type": "text" },
-              "type": { "type": "keyword" }
-            }
-          }
-        }
-      },
-      "prometheus_settings": {
-        "properties": {
-          "metric_prefix": { "type": "keyword" },
-          "labels": { "type": "object" }
-        }
-      },
-      "enabled": { "type": "boolean" },
-      "created_at": { "type": "date" },
-      "updated_at": { "type": "date" }
-    }
-  }
-}
-EOF
-'''
-
-es-upload-config = '''
-curl -X POST "http://localhost:9200/service_configuration/_doc" -H "Content-Type: application/json" -d @elasticsearch_device1_config.json
-'''
-
 es-list-configs = '''
 curl -s "http://localhost:9200/service_configuration/_search" -H "Content-Type: application/json" -d '{
   "query": { "match_all": {} },
@@ -184,3 +141,7 @@ deps-clean = "go clean -modcache"
 
 # Development setup
 setup = ["mise run deps-download", "mise run deps-tidy", "mise run deps-verify", "mise run build"]
+
+
+# Full stack deployment
+stack-up = ["mise run build-all", "mise run network-create", "mise run services-start"]

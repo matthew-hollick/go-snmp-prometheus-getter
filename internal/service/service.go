@@ -15,27 +15,27 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	esapi "github.com/elastic/go-elasticsearch/v8"
-	"github.com/sixworks/go-snmp-prometheus-getter/internal/cache"
-	"github.com/sixworks/go-snmp-prometheus-getter/internal/config"
-	"github.com/sixworks/go-snmp-prometheus-getter/internal/elasticsearch"
-	"github.com/sixworks/go-snmp-prometheus-getter/internal/exporter"
-	"github.com/sixworks/go-snmp-prometheus-getter/internal/schema"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/cache"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/config"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/elasticsearch"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/exporter"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/schema"
 )
 
-// Service handles the main application logic
+// Service handles the main application logic.
 type Service struct {
-	cfg            *config.BootstrapConfiguration
-	esClient       *elasticsearch.Client
-	transformer    *schema.Transformer
-	logger         *slog.Logger
-	configCache    *cache.ConfigCache
-	configRefresh  *time.Ticker
-	workerPool     chan struct{}
-	writerPool     chan struct{}
-	wg             sync.WaitGroup
+	cfg           *config.BootstrapConfiguration
+	esClient      *elasticsearch.Client
+	transformer   *schema.Transformer
+	logger        *slog.Logger
+	configCache   *cache.ConfigCache
+	configRefresh *time.Ticker
+	workerPool    chan struct{}
+	writerPool    chan struct{}
+	wg            sync.WaitGroup
 }
 
-// NewService creates a new service instance
+// NewService creates a new service instance.
 func NewService(cfg *config.BootstrapConfiguration, logger *slog.Logger) (*Service, error) {
 	// Create Elasticsearch client configuration
 	escfg := esapi.Config{
@@ -46,6 +46,7 @@ func NewService(cfg *config.BootstrapConfiguration, logger *slog.Logger) (*Servi
 	if cfg.Elasticsearch.CertificateHash != "" {
 		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12, // Minimum TLS 1.2 for security
 				VerifyConnection: func(cs tls.ConnectionState) error {
 					// Get the certificate hash
 					certHash := sha256.Sum256(cs.PeerCertificates[0].Raw)
@@ -80,7 +81,7 @@ func NewService(cfg *config.BootstrapConfiguration, logger *slog.Logger) (*Servi
 
 	// Create service components
 	transformer := schema.NewTransformer(cfg.Instance.Name, "1.0.0")
-	configCache := cache.NewConfigCache(cfg.Timing.ConfigReloadInterval.Duration)
+	configCache := cache.New(cfg.Timing.ConfigReloadInterval.Duration)
 	configRefresh := time.NewTicker(cfg.Timing.ConfigReloadInterval.Duration)
 	workerPool := make(chan struct{}, cfg.Concurrency.MaxScrapers)
 	writerPool := make(chan struct{}, cfg.Concurrency.MaxWriters)
@@ -97,7 +98,7 @@ func NewService(cfg *config.BootstrapConfiguration, logger *slog.Logger) (*Servi
 	}, nil
 }
 
-// Start begins the service operation
+// Start begins the service operation.
 func (s *Service) Start(ctx context.Context) error {
 	s.logger.Info("starting service",
 		"instance", s.cfg.Instance.Name,
@@ -111,23 +112,27 @@ func (s *Service) Start(ctx context.Context) error {
 		return fmt.Errorf("initial configuration load failed: %w", err)
 	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			s.logger.Info("shutting down service")
-			s.configRefresh.Stop()
-			s.wg.Wait()
-			return nil
+	go func() {
+		defer s.wg.Done()
 
-		case <-s.configRefresh.C:
-			if err := s.refreshConfigurations(ctx); err != nil {
-				s.logger.Error("refreshing configurations", "error", err)
+		for {
+			select {
+			case <-ctx.Done():
+				s.logger.Info("shutting down service")
+				s.configRefresh.Stop()
+				return
+			case <-s.configRefresh.C:
+				if err := s.refreshConfigurations(ctx); err != nil {
+					s.logger.Error("refreshing configurations", "error", err)
+				}
 			}
 		}
-	}
+	}()
+
+	return nil
 }
 
-// refreshConfigurations fetches and processes device configurations
+// refreshConfigurations fetches and processes device configurations.
 func (s *Service) refreshConfigurations(ctx context.Context) error {
 	// Check if cache is still valid
 	if !s.configCache.IsExpired() {
@@ -152,7 +157,8 @@ func (s *Service) refreshConfigurations(ctx context.Context) error {
 	s.configCache.SetAll(configs)
 
 	// Process each configuration
-	for _, cfg := range configs {
+	for i := range configs {
+		cfg := configs[i] // Create a new variable to avoid aliasing
 		if !cfg.Enabled {
 			s.logger.Debug("skipping disabled device",
 				"id", cfg.ID,
@@ -162,18 +168,17 @@ func (s *Service) refreshConfigurations(ctx context.Context) error {
 		}
 
 		if err := s.processConfiguration(ctx, &cfg); err != nil {
-			s.logger.Error("processing configuration",
-				"id", cfg.ID,
-				"name", cfg.Name,
+			s.logger.Error("Failed to process configuration",
 				"error", err,
-			)
+				"id", cfg.ID)
+			continue
 		}
 	}
 
 	return nil
 }
 
-// processConfiguration handles a single device configuration
+// processConfiguration handles a single device configuration.
 func (s *Service) processConfiguration(ctx context.Context, cfg *elasticsearch.Config) error {
 	// Create exporter client for this device's configuration
 	hostname := cfg.CollectorSettings.Hostname
@@ -221,7 +226,7 @@ func (s *Service) processConfiguration(ctx context.Context, cfg *elasticsearch.C
 	return nil
 }
 
-// collectMetrics collects and processes metrics for a device
+// collectMetrics collects and processes metrics for a device.
 func (s *Service) collectMetrics(ctx context.Context, cfg *elasticsearch.Config, exporterClient *exporter.Client) error {
 	params := exporter.QueryParams{
 		Target:    cfg.SNMPSettings.Host,
@@ -231,7 +236,7 @@ func (s *Service) collectMetrics(ctx context.Context, cfg *elasticsearch.Config,
 		Auth:      cfg.SNMPSettings.AuthName,
 	}
 
-	metrics, err := exporterClient.GetMetrics(ctx, params)
+	metrics, err := exporterClient.GetMetrics(ctx, &params)
 	if err != nil {
 		return fmt.Errorf("getting metrics: %w", err)
 	}
@@ -248,23 +253,15 @@ func (s *Service) collectMetrics(ctx context.Context, cfg *elasticsearch.Config,
 
 		// Create metrics document
 		metricsDoc := elasticsearch.MetricsDocument{
-			Timestamp:   doc.Timestamp,
 			DeviceID:    cfg.ID,
-			DeviceName:  cfg.Name,
-			DeviceType:  cfg.Type,
-			Host:        cfg.SNMPSettings.Host,
 			Environment: cfg.Tags.Environment,
 			Location:    cfg.Tags.Location,
 			Role:        cfg.Tags.Role,
-			Metrics: map[string]interface{}{
-				"system":     doc.Metrics.SNMP.SysInfo,
-				"interfaces": doc.Metrics.SNMP.Interfaces,
-				"resources":  doc.Metrics.SNMP.Resources,
-			},
+			Metrics:     doc.Metrics,
 		}
 
 		// Store metrics in Elasticsearch
-		if err := s.esClient.StoreMetrics(ctx, metricsDoc); err != nil {
+		if err := s.esClient.StoreMetrics(ctx, &metricsDoc); err != nil {
 			s.logger.Error("storing metrics",
 				"device", cfg.Name,
 				"error", err,
@@ -287,7 +284,7 @@ func (s *Service) collectMetrics(ctx context.Context, cfg *elasticsearch.Config,
 				"device", cfg.Name,
 				"host", cfg.SNMPSettings.Host,
 				"modules", cfg.CollectorSettings.Modules,
-				"timestamp", metricsDoc.Timestamp,
+				"timestamp", doc.Timestamp,
 			)
 		}
 

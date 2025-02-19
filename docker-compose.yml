@@ -1,5 +1,3 @@
-# version: '3.8'
-
 name: snmp-prometheus-getter
 
 services:
@@ -20,39 +18,13 @@ services:
       timeout: 10s
       retries: 3
     networks:
-      default:
+      hedgehog.internal:
         aliases:
           - elasticsearch.hedgehog.internal
 
-  # redis:
-  #   image: redis:7.2.4
-  #   container_name: redis.superset.hedgehog.internal
-  #   ports:
-  #     - "6379:6379"
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "ping"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-
-  # superset:
-  #   build:
-  #     context: ./superset
-  #   image: hedgehog/superset:latest
-  #   container_name: superset.hedgehog.internal
-  #   depends_on:
-  #     - redis
-  #   ports:
-  #     - "8088:8088"
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-
-  snmp_exporter:
+  snmp-exporter:
     image: prom/snmp-exporter:v0.25.0
-    container_name: snmp.exporter.hedgehog.internal
+    container_name: snmp-exporter.hedgehog.internal
     ports:
       - "9116:9116"
     command:
@@ -66,44 +38,43 @@ services:
       retries: 3
     restart: unless-stopped
     networks:
-      default:
+      hedgehog.internal:
         aliases:
-          - snmp.exporter.hedgehog.internal
+          - snmp-exporter.hedgehog.internal
 
-  snmp_simulator:
-    image: tandrup/snmpsim
-    container_name: snmp.simulator.hedgehog.internal
+  snmp-simulator:
+    image: ghcr.io/lextudio/docker-snmpsim:master
+    container_name: snmp-simulator.hedgehog.internal
     ports:
-      - "161:161/udp"
+      - "11161:11161/udp"
+    environment:
+      - SNMPSIM_LISTEN_IP=0.0.0.0
+      - SNMPSIM_LISTEN_PORT=11161
+      - SNMPSIM_COMMUNITY=public
+      - SNMPSIM_PROTOCOL=v2c
     volumes:
       - ./snmp_data:/usr/local/snmpsim/data
     networks:
-      default:
+      hedgehog.internal:
         aliases:
-          - snmp.simulator.hedgehog.internal
+          - snmp-simulator.hedgehog.internal
     restart: unless-stopped
 
-  snmp_prometheus_getter:
+  snmp-getter:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: snmp.getter.hedgehog.internal
-    environment:
-      - ELASTICSEARCH_HOST=http://elasticsearch.hedgehog.internal:9200
-      - ELASTICSEARCH_PORT=9200
-      - SNMP_EXPORTER_URL=http://snmp.exporter.hedgehog.internal:9116
-      - SNMP_AGENT_HOST=snmp.simulator.hedgehog.internal
-      - SNMP_AGENT_PORT=161
+    container_name: snmp-getter.hedgehog.internal
     volumes:
       - ./config.toml:/app/config.toml:ro
     networks:
-      default:
+      hedgehog.internal:
         aliases:
-          - snmp.getter.hedgehog.internal
+          - snmp-getter.hedgehog.internal
     depends_on:
       - elasticsearch
-      - snmp_exporter
-      - snmp_simulator
+      - snmp-exporter
+      - snmp-simulator
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 30s
@@ -111,23 +82,42 @@ services:
       retries: 3
     restart: unless-stopped
 
-  setup_elasticsearch:
+  setup-elasticsearch:
     image: curlimages/curl:latest
     volumes:
       - ./scripts/setup_test_config.sh:/setup_test_config.sh:ro
+      - ./elasticsearch_config.example.json:/config/elasticsearch_device1_config.json:ro
     entrypoint: ["/bin/sh", "/setup_test_config.sh"]
     depends_on:
       elasticsearch:
         condition: service_healthy
     networks:
-      default:
+      hedgehog.internal:
         aliases:
-          - setup.elasticsearch.hedgehog.internal
+          - setup-elasticsearch.hedgehog.internal
+
+  troubleshoot:
+    image: ubuntu:latest
+    container_name: troubleshoot.hedgehog.internal
+    command: tail -f /dev/null
+    networks:
+      hedgehog.internal:
+        aliases:
+          - troubleshoot.hedgehog.internal
+    volumes:
+      - /etc/hosts:/etc/hosts:ro
+    cap_add:
+      - NET_ADMIN
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "22"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
 
 volumes:
   elasticsearch_data:
 
 networks:
-  default:
-    name: hedgehog.internal
+  hedgehog.internal:
     external: true

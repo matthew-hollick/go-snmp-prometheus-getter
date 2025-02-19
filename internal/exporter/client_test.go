@@ -140,7 +140,7 @@ func TestClient_GetMetrics(t *testing.T) {
 		Port:      1161,
 	}
 
-	metrics, err := client.GetMetrics(context.Background(), params)
+	metrics, err := client.GetMetrics(context.Background(), &params)
 	if err != nil {
 		t.Fatalf("GetMetrics() error = %v", err)
 	}

@@ -8,31 +8,34 @@ import (
 	"io"
 	"time"
 
-	"github.com/elastic/go-elasticsearch/v8"
+	esapi "github.com/elastic/go-elasticsearch/v8"
+	"github.com/matthew-hollick/go-snmp-prometheus-getter/internal/schema"
 )
 
 // Client wraps the Elasticsearch client for our specific use case
 type Client struct {
-	es    *elasticsearch.Client
+	es    *esapi.Client
 	index string
 }
 
 // SNMPSettings contains SNMP protocol configuration for the device
 type SNMPSettings struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Version  string `json:"version"`
-	AuthName string `json:"auth_name"`
-	Timeout  string `json:"timeout"`
-	Retries  int    `json:"retries"`
+	Host                string `json:"host"`
+	Port                int    `json:"port"`
+	Version             string `json:"version"`
+	Community           string `json:"community"`
+	AuthName            string `json:"auth_name"`
+	Timeout             string `json:"timeout"`
+	Retries             int    `json:"retries"`
+	PollIntervalSeconds int    `json:"poll_interval_seconds"`
 }
 
 // CollectorSettings contains settings for the SNMP metrics collector
 type CollectorSettings struct {
-	Hostname           string          `json:"hostname"`
-	Version            string          `json:"version"`
-	Modules            []string        `json:"modules"`
-	CollectionInterval string          `json:"collection_interval"`
+	Hostname           string         `json:"hostname"`
+	Version            string         `json:"version"`
+	Modules            []string       `json:"modules"`
+	CollectionInterval string         `json:"collection_interval"`
 	Metrics           MetricsSettings `json:"metrics"`
 }
 
@@ -62,28 +65,26 @@ type Config struct {
 	UpdatedAt         time.Time         `json:"updated_at"`
 }
 
-// MetricsDocument represents a metrics document in Elasticsearch
+// MetricsDocument represents a document to be stored in Elasticsearch.
 type MetricsDocument struct {
-	Timestamp   time.Time              `json:"@timestamp"`
-	DeviceID    string                 `json:"device_id"`
-	DeviceName  string                 `json:"device_name"`
-	DeviceType  string                 `json:"device_type"`
-	Host        string                 `json:"host"`
-	Environment string                 `json:"environment"`
-	Location    string                 `json:"location"`
-	Role        string                 `json:"role"`
-	Metrics     map[string]interface{} `json:"metrics"`
+	DeviceID    string            `json:"device_id"`
+	Environment string            `json:"environment"`
+	Location    string            `json:"location"`
+	Role        string            `json:"role"`
+	Metrics     schema.MetricsInfo `json:"metrics"`
 }
 
 // NewClient creates a new Elasticsearch client wrapper
-func NewClient(esclient *elasticsearch.Client, index string, opts ...func(*Client)) *Client {
+func NewClient(esclient *esapi.Client, index string, opts ...func(*Client)) *Client {
 	client := &Client{
 		es:    esclient,
 		index: index,
 	}
+
 	for _, opt := range opts {
 		opt(client)
 	}
+
 	return client
 }
 
@@ -97,7 +98,12 @@ func (c *Client) ListConfigs(ctx context.Context) ([]Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("searching configs: %w", err)
 	}
-	defer res.Body.Close()
+
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			return
+		}
+	}()
 
 	if res.IsError() {
 		body, _ := io.ReadAll(res.Body)
@@ -124,28 +130,37 @@ func (c *Client) ListConfigs(ctx context.Context) ([]Config, error) {
 	return configs, nil
 }
 
-// SaveConfig saves a device configuration to Elasticsearch
-func (c *Client) SaveConfig(ctx context.Context, config Config) error {
+// SaveConfig saves a device configuration to Elasticsearch.
+func (c *Client) SaveConfig(ctx context.Context, config *Config) error {
+	if config == nil {
+		return fmt.Errorf("config cannot be nil")
+	}
+
 	config.UpdatedAt = time.Now()
 	if config.CreatedAt.IsZero() {
 		config.CreatedAt = config.UpdatedAt
 	}
 
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(config); err != nil {
-		return fmt.Errorf("encoding config: %w", err)
+	data, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
 	}
 
 	res, err := c.es.Index(
 		c.index,
-		&buf,
+		bytes.NewReader(data),
 		c.es.Index.WithContext(ctx),
 		c.es.Index.WithDocumentID(config.ID),
 	)
 	if err != nil {
 		return fmt.Errorf("indexing config: %w", err)
 	}
-	defer res.Body.Close()
+
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			return
+		}
+	}()
 
 	if res.IsError() {
 		body, _ := io.ReadAll(res.Body)
@@ -165,7 +180,11 @@ func (c *Client) DeleteConfig(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("deleting config: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			return
+		}
+	}()
 
 	if res.IsError() {
 		body, _ := io.ReadAll(res.Body)
@@ -175,23 +194,32 @@ func (c *Client) DeleteConfig(ctx context.Context, id string) error {
 	return nil
 }
 
-// StoreMetrics stores a metrics document in Elasticsearch
-func (c *Client) StoreMetrics(ctx context.Context, doc MetricsDocument) error {
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(doc); err != nil {
-		return fmt.Errorf("encoding metrics document: %w", err)
+// StoreMetrics stores a metrics document in Elasticsearch.
+func (c *Client) StoreMetrics(ctx context.Context, doc *MetricsDocument) error {
+	if doc == nil {
+		return fmt.Errorf("metrics document cannot be nil")
+	}
+
+	data, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("marshaling metrics: %w", err)
 	}
 
 	res, err := c.es.Index(
 		c.index,
-		&buf,
+		bytes.NewReader(data),
 		c.es.Index.WithContext(ctx),
 		c.es.Index.WithRefresh("true"),
 	)
 	if err != nil {
 		return fmt.Errorf("indexing metrics: %w", err)
 	}
-	defer res.Body.Close()
+
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			return
+		}
+	}()
 
 	if res.IsError() {
 		body, _ := io.ReadAll(res.Body)
